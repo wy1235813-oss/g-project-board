@@ -359,8 +359,8 @@ const nz = v => (v==null || v==='') ? '—' : v;
 const num = v => { const n = parseInt(String(v).replace(/[^\d-]/g,'')); return isNaN(n) ? null : n; };
 
 const STATE = {
-  onsite:{q:'',status:'',domain:'',quick:'all',sort:{k:'id',dir:'asc'}},
-  issues:{q:'',status:'',domain:'',quick:'all',sort:{k:'stale',dir:'desc'}},
+  onsite:{q:'',status:'',domain:'',days:'',quick:'all',sort:{k:'id',dir:'asc'}},
+  issues:{q:'',status:'',domain:'',days:'',quick:'all',sort:{k:'stale',dir:'desc'}},
   focus:{q:''}
 };
 let active = 'onsite';
@@ -464,6 +464,11 @@ function buildToolbar(){
       <select data-f="domain" data-tab="${k}">
         <option value="">全部${k==='onsite'?'责任领域':'领域'}</option>
         ${domVals.map(v=>`<option value="${esc(v)}"${STATE[k].domain===v?' selected':''}>${esc(v)}</option>`).join('')}
+      </select>
+      <select data-f="days" data-tab="${k}">
+        <option value="">全部时间</option>
+        <option value="7"${STATE[k].days=='7'?' selected':''}>近 7 日</option>
+        <option value="30"${STATE[k].days=='30'?' selected':''}>近 30 日</option>
       </select>` : ''}
       <span class="spacer"></span>
       <span class="result" data-res="${k}"></span>
@@ -488,7 +493,7 @@ function buildToolbar(){
   }));
   document.querySelectorAll('[data-reset]').forEach(b=>b.addEventListener('click',()=>{
     const k=b.dataset.reset;
-    STATE[k].q=''; if(k!=='focus'){STATE[k].status='';STATE[k].domain='';STATE[k].quick='all';}
+    STATE[k].q=''; if(k!=='focus'){STATE[k].status='';STATE[k].domain='';STATE[k].quick='all';STATE[k].days='';}
     buildToolbar(); render(k);
   }));
   document.querySelectorAll('[data-csv]').forEach(b=>b.addEventListener('click',()=>exportCSV(b.dataset.csv)));
@@ -557,6 +562,17 @@ function rowsFor(k){
     else if(quick==='zero') rows = rows.filter(r=>/Open/i.test(r.status) && /未响应/.test(String(r.resp||'')));
     if(STATE[k].status) rows = rows.filter(r=>r.status===STATE[k].status);
     if(STATE[k].domain) rows = rows.filter(r=>r.domain===STATE[k].domain);
+    const days = Number(STATE[k].days || 0);
+    if(days > 0){
+      const cutoff = new Date(); cutoff.setHours(0,0,0,0);
+      cutoff.setDate(cutoff.getDate() - (days - 1));
+      rows = rows.filter(r=>{
+        const raw = String((k === 'onsite' ? r.date : r.created) || '').slice(0, 10);
+        if(!raw) return false;
+        const t = new Date(raw + 'T00:00:00');
+        return !isNaN(t.getTime()) && t >= cutoff;
+      });
+    }
     const {k:sk, dir} = STATE[k].sort;
     const f = F[k].find(x=>x.k===sk);
     rows.sort((a,b)=>{
@@ -641,8 +657,12 @@ function renderTable(k){
   const res = document.querySelector(`[data-res="${k}"]`);
   if(res){
     const q = STATE[k].quick || 'all';
-    const hint = {key:'关键问题',doc:'文档相关',stale:'停滞 ≥14 天',zero:'进行中零响应'}[q];
-    res.textContent = `共 ${rows.length} / ${DATA[k].length} 条` + (hint ? ` · 已筛选：${hint}` : '');
+    const hints = [];
+    const qh = {key:'关键问题',doc:'文档相关',stale:'停滞 ≥14 天',zero:'进行中零响应'}[q];
+    if(qh) hints.push(qh);
+    const dnum = Number(STATE[k].days || 0);
+    if(dnum) hints.push(`近 ${dnum} 日`);
+    res.textContent = `共 ${rows.length} / ${DATA[k].length} 条` + (hints.length ? ` · 已筛选：${hints.join('、')}` : '');
   }
   const empty = document.getElementById('empty-'+k);
   if(empty){
