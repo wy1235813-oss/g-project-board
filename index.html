@@ -183,6 +183,7 @@
   .sec-title span{font-size:12px;color:var(--muted);font-weight:400}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px;margin-bottom:20px}
   .chart{padding:14px 16px 16px}
+  .chart.wide{grid-column:span 2}
   .ch{font-size:13px;font-weight:600;margin-bottom:12px}
   .bars{display:flex;flex-direction:column;gap:7px}
   .bar-row{display:grid;grid-template-columns:132px 1fr 62px;gap:8px;align-items:center;font-size:12px}
@@ -205,7 +206,7 @@
   .col-v{font-size:10.5px;color:var(--muted);margin-bottom:3px;font-variant-numeric:tabular-nums}
   .col-bar{width:70%;border-radius:3px 3px 0 0;min-height:2px;background:#1f5fbf}
   .col-x{font-size:10px;color:var(--muted);margin-top:5px;white-space:nowrap}
-  @media (max-width:900px){.grid{grid-template-columns:1fr}.bar-row{grid-template-columns:96px 1fr 56px}}
+  @media (max-width:900px){.grid{grid-template-columns:1fr}.chart.wide{grid-column:span 1}.bar-row{grid-template-columns:96px 1fr 56px}}
 </style>
 </head>
 <body>
@@ -272,7 +273,7 @@
   <section class="view" id="view-focus">
     <div class="hero">
       <h2>重点跟进清单</h2>
-      <p>现场：关键且未关闭；Issue：待答复 / 需求开发中 / 问题修改中 / 已答复待进一步交流或验证四类（均只含进行中）；点任意行看完整内容</p>
+      <p>现场：关键且未关闭；Issue：先单独列出「华为侧停滞 >30 天」，其余按待答复 / 需求开发中 / 问题修改中 / 已答复待进一步交流或验证分类（均只含进行中、每个对象只出现一次）；点任意行看完整内容</p>
     </div>
     <div class="summary" id="focus-sum"></div>
     <div class="toolbar" data-tab="focus" style="border:1px solid #e4e7ec;border-radius:10px;margin-bottom:14px;background:#fff"></div>
@@ -998,11 +999,6 @@ function renderCharts(){
   const isClosed = r => /^close/i.test(r.status);
   const onStatus = [['已关闭', on.filter(isClosed).length, '#0f7b5f'], ['进行中', on.filter(r => !isClosed(r)).length, '#c7000b']];
   const onCat = cntBy(on, r => r.cat);
-  const onKey = [
-    ['关键', on.filter(r => r.key === '是').length, '#c7000b'],
-    ['普通', on.filter(r => r.key === '否').length, '#1f5fbf'],
-    ['未标注', on.filter(r => !r.key || (r.key !== '是' && r.key !== '否')).length, '#c3c8d0'],
-  ].filter(x => x[1] > 0);
   const onDomain = cntBy(on, r => r.domain).slice(0, 12);
   const onSolution = cntBy(on, r => r.solution).slice(0, 10);
   const onMonth = monthSeries(on, 'date');
@@ -1021,17 +1017,16 @@ function renderCharts(){
   });
   const itMonth = monthSeries(it, 'created');
 
-  const card = (title, body) => `<div class="card chart"><div class="ch">${title}</div>${body}</div>`;
+  const card = (title, body, cls) => `<div class="card chart ${cls || ''}"><div class="ch">${title}</div>${body}</div>`;
 
   document.getElementById('stats-body').innerHTML = `
     <h3 class="sec-title">现场问题<span>${onTotal} 条</span></h3>
     <div class="grid">
       ${card('状态构成', donut(onStatus, onTotal))}
       ${card('分类构成', hbars(onCat, onTotal))}
-      ${card('是否关键', donut(onKey, onTotal))}
       ${card('责任领域 Top 12', hbars(onDomain, onTotal))}
       ${card('解决方案 Top 10', hbars(onSolution, onTotal))}
-      ${card('每月登记量', columns(onMonth))}
+      ${card('每月登记量', columns(onMonth), 'wide')}
     </div>
     <h3 class="sec-title">CANN Issue<span>${itTotal} 条</span></h3>
     <div class="grid">
