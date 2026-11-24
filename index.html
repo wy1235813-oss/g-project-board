@@ -489,7 +489,7 @@ function buildToolbar(){
     const k = bar.dataset.tab;
     const d = DATA[k];
     const stVals = k==='focus' ? [] : [...new Set(d.map(r=>r.status).filter(Boolean))];
-    const domVals = k==='focus' ? [] : [...new Set(d.map(r=>k==='onsite'?r.domain:r.domain).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh'));
+    const domVals = k==='focus' ? [] : [...new Set(d.map(r=>normDomain(r.domain)))].filter(Boolean).sort((a,b)=>a.localeCompare(b,'zh'));
     bar.innerHTML = `
       <div class="search">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -601,7 +601,7 @@ function rowsFor(k){
     else if(quick==='stale') rows = rows.filter(r=>{ const n = num(r.stale); return n!=null && n>=14; });
     else if(quick==='zero') rows = rows.filter(r=>/Open/i.test(r.status) && /未响应/.test(String(r.resp||'')));
     if(STATE[k].status) rows = rows.filter(r=>r.status===STATE[k].status);
-    if(STATE[k].domain) rows = rows.filter(r=>r.domain===STATE[k].domain);
+    if(STATE[k].domain) rows = rows.filter(r=>normDomain(r.domain)===STATE[k].domain);
     const days = Number(STATE[k].days || 0);
     if(days > 0){
       const cutoff = new Date(); cutoff.setHours(0,0,0,0);
@@ -633,7 +633,8 @@ function rowsFor(k){
 
 /* ---------- table ---------- */
 function cell(f, r){
-  const v = r[f.k];
+  let v = r[f.k];
+  if(f.k === 'domain') v = normDomain(v);
   if(f.type==='status'){
     const s = statusView(v, f.k);
     return `<span class="badge ${s.c}">${esc(s.t)}</span>`;
@@ -668,6 +669,12 @@ function cell(f, r){
 function colW(f){
   if(!f.w) return 'auto';
   return /^\d+$/.test(String(f.w)) ? f.w + 'px' : f.w;
+}
+function normDomain(v){
+  const t = String(v == null ? '' : v).trim();
+  if(!t) return '未标注';
+  if(/^(HCCL|HCOMM)$/i.test(t)) return 'HCCL/HCOMM';
+  return t;
 }
 function cellClass(f){
   if(f.type==='num') return 'num';
@@ -999,7 +1006,7 @@ function renderCharts(){
   const isClosed = r => /^close/i.test(r.status);
   const onStatus = [['已关闭', on.filter(isClosed).length, '#0f7b5f'], ['进行中', on.filter(r => !isClosed(r)).length, '#c7000b']];
   const onCat = cntBy(on, r => r.cat);
-  const onDomain = cntBy(on, r => r.domain).slice(0, 12);
+  const onDomain = cntBy(on, r => normDomain(r.domain)).slice(0, 12);
   const onSolution = cntBy(on, r => r.solution).slice(0, 10);
   const onMonth = monthSeries(on, 'date');
 
@@ -1007,7 +1014,7 @@ function renderCharts(){
   const itStatus = [['进行中', itOpen.length, '#c7000b'], ['已关闭', itTotal - itOpen.length, '#0f7b5f']];
   const itProgress = cntBy(itOpen, r => r.progress);
   const itProgressTotal = itProgress.reduce((a, x) => a + x[1], 0);
-  const itDomain = cntBy(it, r => r.domain).slice(0, 12);
+  const itDomain = cntBy(it, r => normDomain(r.domain)).slice(0, 12);
   const itDispo = cntBy(it, r => r.dispo).slice(0, 10);
   const buckets = [['0 天', 0], ['1–7 天', 0], ['8–14 天', 0], ['15–30 天', 0], ['31–60 天', 0], ['60 天以上', 0]];
   itOpen.forEach(r => {
