@@ -177,6 +177,35 @@
     thead th{position:static}
     tbody tr{break-inside:avoid}
   }
+
+  /* 统计图表 */
+  .sec-title{font-size:14px;margin:4px 0 10px;font-weight:650;display:flex;align-items:baseline;gap:8px}
+  .sec-title span{font-size:12px;color:var(--muted);font-weight:400}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px;margin-bottom:20px}
+  .chart{padding:14px 16px 16px}
+  .ch{font-size:13px;font-weight:600;margin-bottom:12px}
+  .bars{display:flex;flex-direction:column;gap:7px}
+  .bar-row{display:grid;grid-template-columns:132px 1fr 62px;gap:8px;align-items:center;font-size:12px}
+  .bar-label{color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar-track{background:#f0f2f5;border-radius:4px;height:14px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:4px;transition:width .3s}
+  .bar-val{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+  .bar-val .pct{color:var(--muted);font-size:10.5px;margin-left:3px}
+  .donut{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .donut svg{flex:none}
+  .dt{font-size:17px;font-weight:700;fill:var(--ink)}
+  .dl{font-size:10px;fill:#9aa1ac}
+  .legend{display:flex;flex-direction:column;gap:6px;font-size:12px;min-width:130px}
+  .legend .lg{display:flex;align-items:center;gap:6px}
+  .legend i{width:8px;height:8px;border-radius:2px;flex:none}
+  .legend b{font-variant-numeric:tabular-nums}
+  .legend em{color:var(--muted);font-style:normal;font-size:11px}
+  .cols{display:flex;gap:5px;align-items:flex-end;min-height:150px;padding-top:6px}
+  .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
+  .col-v{font-size:10.5px;color:var(--muted);margin-bottom:3px;font-variant-numeric:tabular-nums}
+  .col-bar{width:70%;border-radius:3px 3px 0 0;min-height:2px;background:#1f5fbf}
+  .col-x{font-size:10px;color:var(--muted);margin-top:5px;white-space:nowrap}
+  @media (max-width:900px){.grid{grid-template-columns:1fr}.bar-row{grid-template-columns:96px 1fr 56px}}
 </style>
 </head>
 <body>
@@ -248,6 +277,14 @@
     <div class="summary" id="focus-sum"></div>
     <div class="toolbar" data-tab="focus" style="border:1px solid #e4e7ec;border-radius:10px;margin-bottom:14px;background:#fff"></div>
     <div id="focus-body"></div>
+  </section>
+
+  <section class="view" id="view-stats">
+    <div class="hero">
+      <h2>统计分析</h2>
+      <p>按全量数据统计（不受页签筛选影响）；现场问题与 CANN Issue 分开呈现</p>
+    </div>
+    <div id="stats-body"></div>
   </section>
 </main>
 
@@ -351,6 +388,7 @@ const TABS = [
   {k:'onsite', name:'现场问题', sub:'问题需求清单'},
   {k:'issues', name:'Issue 跟踪', sub:'CANN 全量明细'},
   {k:'focus',  name:'重点跟进', sub:'分档推动清单'},
+  {k:'stats',  name:'统计分析', sub:'多维度图表'},
   {k:'ghmap',  name:'编号对照', sub:'GitHub ↔ GitCode'}
 ];
 
@@ -395,11 +433,12 @@ function focusStats(){
 function counts(k){
   if(k==='focus') return focusStats().unique;
   if(k==='ghmap') return Object.keys(DATA.ghmap?.pairs||{}).length;
+  if(k==='stats') return null;
   return DATA[k].length;
 }
 function renderTabs(){
   document.getElementById('tabs').innerHTML = TABS.map(t =>
-    `<button class="tab${t.k===active?' on':''}" data-tab="${t.k}">${esc(t.name)}<span class="cnt">${counts(t.k)}</span></button>`
+    `<button class="tab${t.k===active?' on':''}" data-tab="${t.k}">${esc(t.name)}${counts(t.k)!=null?`<span class="cnt">${counts(t.k)}</span>`:''}</button>`
   ).join('');
 }
 document.getElementById('tabs').addEventListener('click', e=>{
@@ -876,11 +915,135 @@ function renderGhmap(){
 }
 
 function render(k){
+  if(k==='stats'){ renderCharts(); return; }
   if(k==='ghmap'){ renderGhmap(); return; }
   if(k==='focus'){ renderFocus(); const r=document.querySelector('[data-res="focus"]'); const st=focusStats(); if(r) r.textContent=`${st.records} 条记录 / ${st.unique} 个对象`; return; }
   renderChips(k);
   renderTable(k);
 }
+/* ---------- 统计图表 ---------- */
+const PALETTE = ['#c7000b', '#1f5fbf', '#0f7b5f', '#a35b00', '#6b7280', '#7a4fd0', '#0e7490', '#b45309', '#4b5563', '#9aa1ac'];
+
+function cntBy(rows, fn){
+  const m = new Map();
+  rows.forEach(r=>{ const k = String(fn(r) || '未标注').trim() || '未标注'; m.set(k, (m.get(k) || 0) + 1); });
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+}
+function pctOf(n, total){ return total ? Math.round(n / total * 100) + '%' : '0%'; }
+
+function hbars(items, total){
+  if(!items.length) return '<div class="empty" style="padding:24px">暂无数据</div>';
+  const max = Math.max(...items.map(x => x[1]), 1);
+  return '<div class="bars">' + items.map(([label, n, color], i) => `
+    <div class="bar-row">
+      <div class="bar-label" title="${esc(label)}">${esc(label)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(n / max * 100).toFixed(1)}%;background:${color || PALETTE[i % PALETTE.length]}"></div></div>
+      <div class="bar-val">${n}<span class="pct">${pctOf(n, total)}</span></div>
+    </div>`).join('') + '</div>';
+}
+
+function donut(items, total){
+  if(!items.length || !total) return '<div class="empty" style="padding:24px">暂无数据</div>';
+  const R = 42, C = 2 * Math.PI * R;
+  let off = 0;
+  const segs = items.map(([label, n, color], i) => {
+    const len = n / total * C;
+    const el = `<circle cx="60" cy="60" r="${R}" fill="none" stroke="${color || PALETTE[i % PALETTE.length]}" stroke-width="16"
+      stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 60 60)"/>`;
+    off += len;
+    return el;
+  }).join('');
+  const legend = items.map(([label, n, color], i) => `
+    <div class="lg"><i style="background:${color || PALETTE[i % PALETTE.length]}"></i><span>${esc(label)}</span><b>${n}</b><em>${pctOf(n, total)}</em></div>`).join('');
+  return `<div class="donut">
+    <svg viewBox="0 0 120 120" width="128" height="128">${segs}
+      <circle cx="60" cy="60" r="30" fill="#fff"/>
+      <text x="60" y="57" text-anchor="middle" class="dt">${total}</text>
+      <text x="60" y="73" text-anchor="middle" class="dl">合计</text>
+    </svg>
+    <div class="legend">${legend}</div>
+  </div>`;
+}
+
+function monthSeries(rows, key){
+  const ks = rows.map(r => String(r[key] || '').slice(0, 7)).filter(k => /^\d{4}-\d{2}$/.test(k)).sort();
+  if(!ks.length) return [];
+  const [y0, m0] = ks[0].split('-').map(Number);
+  const [y1, m1] = ks[ks.length - 1].split('-').map(Number);
+  const out = [];
+  let y = y0, m = m0;
+  while(y < y1 || (y === y1 && m <= m1)){
+    const k = `${y}-${String(m).padStart(2, '0')}`;
+    out.push([k, rows.filter(r => String(r[key] || '').slice(0, 7) === k).length]);
+    m++; if(m > 12){ m = 1; y++; }
+  }
+  return out;
+}
+
+function columns(items){
+  if(!items.length) return '<div class="empty" style="padding:24px">暂无数据</div>';
+  const max = Math.max(...items.map(x => x[1]), 1);
+  return `<div class="cols">${items.map(([label, n]) => `
+    <div class="col" title="${esc(label)}：${n}">
+      <div class="col-v">${n}</div>
+      <div class="col-bar" style="height:${Math.max(2, Math.round(n / max * 118))}px"></div>
+      <div class="col-x">${esc(label.slice(2))}</div>
+    </div>`).join('')}</div>`;
+}
+
+function renderCharts(){
+  const on = DATA.onsite, it = DATA.issues;
+  const onTotal = on.length, itTotal = it.length;
+
+  const isClosed = r => /^close/i.test(r.status);
+  const onStatus = [['已关闭', on.filter(isClosed).length, '#0f7b5f'], ['进行中', on.filter(r => !isClosed(r)).length, '#c7000b']];
+  const onCat = cntBy(on, r => r.cat);
+  const onKey = [
+    ['关键', on.filter(r => r.key === '是').length, '#c7000b'],
+    ['普通', on.filter(r => r.key === '否').length, '#1f5fbf'],
+    ['未标注', on.filter(r => !r.key || (r.key !== '是' && r.key !== '否')).length, '#c3c8d0'],
+  ].filter(x => x[1] > 0);
+  const onDomain = cntBy(on, r => r.domain).slice(0, 12);
+  const onSolution = cntBy(on, r => r.solution).slice(0, 10);
+  const onMonth = monthSeries(on, 'date');
+
+  const itOpen = it.filter(r => r.status === 'Open');
+  const itStatus = [['进行中', itOpen.length, '#c7000b'], ['已关闭', itTotal - itOpen.length, '#0f7b5f']];
+  const itProgress = cntBy(itOpen, r => r.progress);
+  const itProgressTotal = itProgress.reduce((a, x) => a + x[1], 0);
+  const itDomain = cntBy(it, r => r.domain).slice(0, 12);
+  const itDispo = cntBy(it, r => r.dispo).slice(0, 10);
+  const buckets = [['0 天', 0], ['1–7 天', 0], ['8–14 天', 0], ['15–30 天', 0], ['31–60 天', 0], ['60 天以上', 0]];
+  itOpen.forEach(r => {
+    const n = parseInt(r.stale, 10) || 0;
+    const i = n === 0 ? 0 : n <= 7 ? 1 : n <= 14 ? 2 : n <= 30 ? 3 : n <= 60 ? 4 : 5;
+    buckets[i][1]++;
+  });
+  const itMonth = monthSeries(it, 'created');
+
+  const card = (title, body) => `<div class="card chart"><div class="ch">${title}</div>${body}</div>`;
+
+  document.getElementById('stats-body').innerHTML = `
+    <h3 class="sec-title">现场问题<span>${onTotal} 条</span></h3>
+    <div class="grid">
+      ${card('状态构成', donut(onStatus, onTotal))}
+      ${card('分类构成', hbars(onCat, onTotal))}
+      ${card('是否关键', donut(onKey, onTotal))}
+      ${card('责任领域 Top 12', hbars(onDomain, onTotal))}
+      ${card('解决方案 Top 10', hbars(onSolution, onTotal))}
+      ${card('每月登记量', columns(onMonth))}
+    </div>
+    <h3 class="sec-title">CANN Issue<span>${itTotal} 条</span></h3>
+    <div class="grid">
+      ${card('状态构成', donut(itStatus, itTotal))}
+      ${card('进行中 · 进展分类', hbars(itProgress, itProgressTotal))}
+      ${card('进行中 · 停滞天数分布', hbars(buckets, itOpen.length))}
+      ${card('领域 Top 12', hbars(itDomain, itTotal))}
+      ${card('处置类型 Top 10', hbars(itDispo, itTotal))}
+      ${card('每月新增', columns(itMonth))}
+    </div>`;
+}
+
 /* ---------- 解锁 ---------- */
 let PENDING_ENV = null;
 
@@ -937,7 +1100,7 @@ document.getElementById('subline').textContent =
 
 // deep link
 (function(){
-  const m = location.hash.match(/^#(onsite|issues|focus|ghmap)(?::(\d+))?$/);
+  const m = location.hash.match(/^#(onsite|issues|focus|ghmap|stats)(?::(\d+))?$/);
   if(!m) return;
   switchTab(m[1]);
   render(m[1]);
