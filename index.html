@@ -273,7 +273,7 @@
   <section class="view" id="view-focus">
     <div class="hero">
       <h2>重点跟进清单</h2>
-      <p>现场：关键且未关闭；Issue：先单独列出「华为侧停滞 >30 天」，其余按待答复 / 需求开发中 / 问题修改中 / 已答复待进一步交流或验证分类（均只含进行中、每个对象只出现一次）；点任意行看完整内容</p>
+      <p>现场：P0/P1 且未关闭（问题/需求分列）；Issue：先单独列出「华为侧停滞 >30 天」，其余按待答复 / 需求开发中 / 问题修改中 / 已答复待进一步交流或验证分类（均只含进行中、每个对象只出现一次）；点任意行看完整内容</p>
     </div>
     <div class="summary" id="focus-sum"></div>
     <div class="toolbar" data-tab="focus" style="border:1px solid #e4e7ec;border-radius:10px;margin-bottom:14px;background:#fff"></div>
@@ -336,7 +336,7 @@ const F = {
     {k:'cat',   l:'分类',      w:66,  type:'text', col:1, sm:0},
     {k:'domain',l:'责任领域',  w:110, type:'text', col:1},
     {k:'status',l:'问题状态',  w:82,  type:'status',col:1},
-    {k:'key',   l:'是否关键',  w:78,  type:'flag', col:1, sm:0},
+    {k:'level', l:'级别',      w:64,  type:'level', col:1, sm:0},
     {k:'solution',l:'解决方案',w:100, type:'text', col:1, sm:0},
     {k:'owner', l:'责任人',    w:82,  type:'text', col:1, sm:0},
     {k:'doc',   l:'是否文档相关', w:100, type:'text', col:0},
@@ -379,6 +379,7 @@ const F = {
     {k:'id',     l:'序号',     w:58, type:'num'},
     {k:'title',  l:'问题标题', w:'26%', type:'title'},
     {k:'cat',    l:'分类',     w:70, type:'tag'},
+    {k:'level',  l:'级别',     w:64, type:'level'},
     {k:'domain', l:'责任领域', w:104, type:'text', wrap:1},
     {k:'owner',  l:'责任人',   w:86, type:'text', wrap:1},
     {k:'reply',  l:'进展',     type:'long'}
@@ -398,7 +399,7 @@ const nz = v => (v==null || v==='') ? '—' : v;
 const num = v => { const n = parseInt(String(v).replace(/[^\d-]/g,'')); return isNaN(n) ? null : n; };
 
 const STATE = {
-  onsite:{q:'',status:'',domain:'',days:'',quick:'all',sort:{k:'id',dir:'asc'}},
+  onsite:{q:'',status:'',domain:'',level:'',days:'',quick:'all',sort:{k:'id',dir:'asc'}},
   issues:{q:'',status:'',domain:'',days:'',quick:'all',sort:{k:'stale',dir:'desc'}},
   focus:{q:''}
 };
@@ -458,14 +459,14 @@ function switchTab(k){
 function renderStats(){
   const on = DATA.onsite;
   const closed = on.filter(r=>/^close/i.test(r.status)).length;
-  const key = on.filter(r=>r.key==='是').length;
+  const high = on.filter(r=>['P0','P1'].includes(String(r.level||'').toUpperCase())).length;
   const doc = on.filter(r=>r.doc==='是').length;
   const domains = new Set(on.map(r=>r.domain).filter(Boolean)).size;
   document.getElementById('stats-onsite').innerHTML = [
     {n:on.length, l:'问题总数', d:'2026-03-15 起登记', cls:'s0', a:'all'},
     {n:closed, l:'已关闭', d:on.length?Math.round(closed/on.length*100)+'% 已闭环':'', cls:'s2', a:'closed'},
     {n:on.length-closed, l:'未关闭', d:'仍需跟进', cls:'s1', a:'open'},
-    {n:key, l:'关键问题', d:'标记为关键', cls:'s3', a:'key'},
+    {n:high, l:'P0/P1', d:'高优先级问题', cls:'s3', a:'high'},
     {n:doc, l:'文档相关', d:'需文档整改', cls:'s4', a:'doc'}
   ].map(s=>`<div class="stat ${s.cls}" data-act="${s.a}"><div class="n">${s.n}</div><div class="l">${s.l}</div><div class="d">${s.d}</div></div>`).join('');
 
@@ -505,6 +506,11 @@ function buildToolbar(){
         <option value="">全部${k==='onsite'?'责任领域':'领域'}</option>
         ${domVals.map(v=>`<option value="${esc(v)}"${STATE[k].domain===v?' selected':''}>${esc(v)}</option>`).join('')}
       </select>
+      ${k==='onsite' ? `
+      <select data-f="level" data-tab="onsite">
+        <option value="">全部级别</option>
+        ${['P0','P1','P2','P3','未分级'].map(v=>`<option value="${v}"${STATE.onsite.level===v?' selected':''}>${v}</option>`).join('')}
+      </select>` : ''}
       <select data-f="days" data-tab="${k}">
         <option value="">全部时间</option>
         <option value="7"${STATE[k].days=='7'?' selected':''}>近 7 日</option>
@@ -533,7 +539,7 @@ function buildToolbar(){
   }));
   document.querySelectorAll('[data-reset]').forEach(b=>b.addEventListener('click',()=>{
     const k=b.dataset.reset;
-    STATE[k].q=''; if(k!=='focus'){STATE[k].status='';STATE[k].domain='';STATE[k].quick='all';STATE[k].days='';}
+    STATE[k].q=''; if(k!=='focus'){STATE[k].status='';STATE[k].domain='';STATE[k].level='';STATE[k].quick='all';STATE[k].days='';}
     buildToolbar(); render(k);
   }));
   document.querySelectorAll('[data-csv]').forEach(b=>b.addEventListener('click',()=>exportCSV(b.dataset.csv)));
@@ -547,7 +553,7 @@ document.addEventListener('click', e=>{
   const act = st.dataset.act;
   const S = STATE[k];
   const map = k==='onsite'
-    ? {all:'',closed:'close',open:'open',key:'key',doc:'doc'}
+    ? {all:'',closed:'close',open:'open',key:'key',doc:'doc',high:'high'}
     : {all:'',closed:'Closed',open:'Open',stale:'stale',zero:'zero'};
   const v = map[act];
   if(act==='closed' || act==='open'){
@@ -597,11 +603,13 @@ function rowsFor(k){
   if(k!=='focus'){
     const quick = STATE[k].quick || 'all';
     if(quick==='key') rows = rows.filter(r=>r.key==='是');
+    else if(quick==='high') rows = rows.filter(r=>['P0','P1'].includes(String(r.level||'').toUpperCase()));
     else if(quick==='doc') rows = rows.filter(r=>r.doc==='是');
     else if(quick==='stale') rows = rows.filter(r=>{ const n = num(r.stale); return n!=null && n>=14; });
     else if(quick==='zero') rows = rows.filter(r=>/Open/i.test(r.status) && /未响应/.test(String(r.resp||'')));
     if(STATE[k].status) rows = rows.filter(r=>r.status===STATE[k].status);
     if(STATE[k].domain) rows = rows.filter(r=>normDomain(r.domain)===STATE[k].domain);
+    if(k==='onsite' && STATE[k].level) rows = rows.filter(r => (String(r.level||'').toUpperCase() || '未分级') === STATE[k].level);
     const days = Number(STATE[k].days || 0);
     if(days > 0){
       const cutoff = new Date(); cutoff.setHours(0,0,0,0);
@@ -648,6 +656,14 @@ function cell(f, r){
     const n = num(v);
     if(n==null) return '<span class="badge b-mute">—</span>';
     return `<span class="badge ${staleClass(v)}">${n} 天</span>`;
+  }
+  if(f.type==='level'){
+    const lv = String(v || '').toUpperCase();
+    if(lv === 'P0') return '<span class="badge b-danger">P0</span>';
+    if(lv === 'P1') return '<span class="badge b-warn">P1</span>';
+    if(lv === 'P2') return '<span class="badge b-blue">P2</span>';
+    if(lv === 'P3') return '<span class="badge b-mute">P3</span>';
+    return '<span style="color:#c7ccd4">—</span>';
   }
   if(f.type==='flag'){
     if(v==='是') return '<span class="badge b-danger"><i class="dot"></i>关键</span>';
@@ -705,7 +721,7 @@ function renderTable(k){
   if(res){
     const q = STATE[k].quick || 'all';
     const hints = [];
-    const qh = {key:'关键问题',doc:'文档相关',stale:'停滞 ≥14 天',zero:'进行中零响应'}[q];
+    const qh = {key:'关键问题',doc:'文档相关',high:'P0/P1',stale:'停滞 ≥14 天',zero:'进行中零响应'}[q];
     if(qh) hints.push(qh);
     const dnum = Number(STATE[k].days || 0);
     if(dnum) hints.push(`近 ${dnum} 日`);
