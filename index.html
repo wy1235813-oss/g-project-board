@@ -490,7 +490,7 @@ function switchTab(k){
 function renderStats(){
   const on = DATA.onsite;
   const closed = on.filter(r=>/^close/i.test(r.status)).length;
-  const high = on.filter(r=>/^open$/i.test(r.status) && ['P0','P1'].includes(String(r.level||'').toUpperCase())).length;
+  const high = on.filter(r=>!/^close/i.test(r.status) && ['P0','P1'].includes(String(r.level||'').toUpperCase())).length;
   const doc = on.filter(r=>r.doc==='是').length;
   const domains = new Set(on.map(r=>r.domain).filter(Boolean)).size;
   document.getElementById('stats-onsite').innerHTML = [
@@ -634,7 +634,7 @@ function rowsFor(k){
   if(k!=='focus'){
     const quick = STATE[k].quick || 'all';
     if(quick==='key') rows = rows.filter(r=>r.key==='是');
-    else if(quick==='high') rows = rows.filter(r=>/^open$/i.test(r.status) && ['P0','P1'].includes(String(r.level||'').toUpperCase()));
+    else if(quick==='high') rows = rows.filter(r=>!/^close/i.test(r.status) && ['P0','P1'].includes(String(r.level||'').toUpperCase()));
     else if(quick==='doc') rows = rows.filter(r=>r.doc==='是');
     else if(quick==='stale') rows = rows.filter(r=>{ const n = num(r.stale); return n!=null && n>=14; });
     else if(quick==='zero') rows = rows.filter(r=>/Open/i.test(r.status) && /未响应/.test(String(r.resp||'')));
